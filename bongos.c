@@ -13,9 +13,12 @@
 #define B "B"
 #define X "X"
 #define Y "Y"
+#define START "START"
+#define MAYFLASH 1
+#define WIIU 2
 
-void check_buttons(int, int);
-char* get_button(int);
+void check_buttons(int, int, int);
+char* get_button(int, int);
 char* get_status(int);
 
 int set_interface_attribs(int fd, int speed)
@@ -72,6 +75,13 @@ void set_mincount(int fd, int mcount)
 
 int main()
 {
+    int adapter = -1;
+    while (adapter != MAYFLASH && adapter != WIIU)
+    {
+        printf("Choose adapter: \n1 - Mayflash\n2 - Official\n");
+        scanf("%d", &adapter);
+    }
+
     char *portname = "/dev/input/js0";
     int fd;
     int wlen;
@@ -109,38 +119,53 @@ int main()
 
             if (rdlen == 8){
                 //printf("8 bytes read, checking for buttons\n");
-                check_buttons(buf[4], buf[7]);
+                check_buttons(buf[4], buf[7], adapter);
             } else {
-                /*unsigned char   *p;
+                unsigned char   *p;
                 for (p = buf; rdlen-- > 0; p++)
                     printf("%d\t", *p);
-                printf("\n");*/
+                printf("\n");
             }
 #endif
         } else if (rdlen < 0) {
             printf("Error from read: %d: %s\n", rdlen, strerror(errno));
-        }
+        } 
         /* repeat read to get full message */
     } while (1);
 }
 
-void check_buttons(int status, int button){
+void check_buttons(int status, int button, int adapter){
     char message[80];
     memset(message, '\0', 80);
     char *str_status = get_status(status);
-    char *str_button = get_button(button);
+    char *str_button = get_button(button, adapter);
     if (strcmp(str_status, UNKNOWN) != 0 && strcmp(str_button, UNKNOWN)){
         printf("Button %s %s\n", str_button, str_status);
     }
 }
 
-char* get_button(int button){
-    switch(button){
-        case 0: return X;
-        case 1: return A;
-        case 2: return B;
-        case 3: return Y;
-        default: return UNKNOWN;
+char* get_button(int button, int adapter){
+    if (adapter == MAYFLASH)
+    {
+        switch(button){
+            case 0: return X;
+            case 1: return A;
+            case 2: return B;
+            case 3: return Y;
+            case 7: return START;
+            default: return UNKNOWN;
+        }
+    }
+    else if (adapter == WIIU)
+    {
+        switch(button){
+            case 0: return A;
+            case 1: return X;
+            case 2: return Y;
+            case 3: return B;
+            case 7: return START;
+            default: return UNKNOWN;
+        }
     }
 }
 
