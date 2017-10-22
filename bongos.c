@@ -55,8 +55,13 @@ typedef struct _button_press
     int time;
 } button_press;
 
+typedef struct _whatever {
+    button_press* presses;
+    int length;
+} password;
 
-
+void to_file(button_press*, int);
+password from_file(char*);
 void reset_state(bongo_state*);
 int set_interface_attribs(int , int);
 void draw_bongos(bongo_state);
@@ -68,7 +73,57 @@ char* get_button(int);
 char* get_status(int);
 bool bongo_decision(bongo_state, char*, char*);
 int select_length(bongo_state, char*, char*);
+void bongo_statement(bongo_state, char*);
 
+void bongo_statement(bongo_state state, char* a){
+    draw_bongos(state);
+    XDrawImageString(dpy, w, gc, BONGO_RADIUS * 2.25f, BONGO_RADIUS * 0.25f, a, strlen(a));
+    XFlush(dpy);
+
+    char *portname = "/dev/input/js0";
+    int fd;
+    int wlen;
+
+    fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
+    if (fd < 0) {
+        exit(-1);
+    }
+    /*baudrate 115200, 8 bits, no parity, 1 stop bit */
+    set_interface_attribs(fd, B115200);
+    //set_mincount(fd, 0);                /* set to pure timed read */
+
+    /* simple output */
+    wlen = write(fd, "Hello!\n", 7);
+    if (wlen != 7) {
+        //printf("Error from write: %d, %d\n", wlen, errno);
+    }
+    tcdrain(fd);    /* delay for output */
+
+    do {
+        draw_bongos(state);
+        XDrawImageString(dpy, w, gc, BONGO_RADIUS * 2.25f, BONGO_RADIUS * 0.25f, a, strlen(a));
+        XFlush(dpy);
+        unsigned char buf[80];
+        int rdlen;
+
+        rdlen = read(fd, buf, sizeof(buf) - 1);
+        if (rdlen > 0) {
+            /* display hex */
+            if (rdlen == 8 && buf[4] == 1){
+                int time = buf[2] * 256 * 256 + buf[1] * 256 + buf[0];
+                button_press press = { buf[4], buf[7], time };
+                if (check_buttons(&state, &press)){
+                    draw_bongos(state);
+                    XDrawImageString(dpy, w, gc, BONGO_RADIUS * 2.25f, BONGO_RADIUS * 0.25f, a, strlen(a));
+                    XFlush(dpy);
+                    return;
+                }
+            }
+        } else if (rdlen < 0) {
+            //printf("Error from read: %d: %s\n", rdlen, strerror(errno));
+        }
+    } while (1);
+}
 
 void reset_state(bongo_state* state){
     state->bottom_left = false;
@@ -86,7 +141,7 @@ int select_length(bongo_state state, char* a, char* b){
 
     fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
-        printf("Error opening %s: %s\n", portname, strerror(errno));
+        //printf("Error opening %s: %s\n", portname, strerror(errno));
         exit(-1);
     }
     /*baudrate 115200, 8 bits, no parity, 1 stop bit */
@@ -96,7 +151,7 @@ int select_length(bongo_state state, char* a, char* b){
     /* simple output */
     wlen = write(fd, "Hello!\n", 7);
     if (wlen != 7) {
-        printf("Error from write: %d, %d\n", wlen, errno);
+        //printf("Error from write: %d, %d\n", wlen, errno);
     }
     tcdrain(fd);    /* delay for output */
 
@@ -131,7 +186,7 @@ int select_length(bongo_state state, char* a, char* b){
                 }
             }
         } else if (rdlen < 0) {
-            printf("Error from read: %d: %s\n", rdlen, strerror(errno));
+            //printf("Error from read: %d: %s\n", rdlen, strerror(errno));
         }
         /* repeat read to get full message */
 
@@ -157,7 +212,7 @@ bool bongo_decision(bongo_state state, char* a, char* b){
 
     fd = open(portname, O_RDWR | O_NOCTTY | O_SYNC);
     if (fd < 0) {
-        printf("Error opening %s: %s\n", portname, strerror(errno));
+        //printf("Error opening %s: %s\n", portname, strerror(errno));
         exit(-1);
     }
     /*baudrate 115200, 8 bits, no parity, 1 stop bit */
@@ -167,7 +222,7 @@ bool bongo_decision(bongo_state state, char* a, char* b){
     /* simple output */
     wlen = write(fd, "Hello!\n", 7);
     if (wlen != 7) {
-        printf("Error from write: %d, %d\n", wlen, errno);
+        //printf("Error from write: %d, %d\n", wlen, errno);
     }
     tcdrain(fd);    /* delay for output */
 
@@ -198,7 +253,7 @@ bool bongo_decision(bongo_state state, char* a, char* b){
                 }
             }
         } else if (rdlen < 0) {
-            printf("Error from read: %d: %s\n", rdlen, strerror(errno));
+            //printf("Error from read: %d: %s\n", rdlen, strerror(errno));
         }
         /* repeat read to get full message */
     } while (1);
@@ -209,7 +264,7 @@ int set_interface_attribs(int fd, int speed)
     struct termios tty;
 
     if (tcgetattr(fd, &tty) < 0) {
-        printf("Error from tcgetattr: %s\n", strerror(errno));
+        //printf("Error from tcgetattr: %s\n", strerror(errno));
         return -1;
     }
 
@@ -233,7 +288,7 @@ int set_interface_attribs(int fd, int speed)
     tty.c_cc[VTIME] = 1;
 
     if (tcsetattr(fd, TCSANOW, &tty) != 0) {
-        printf("Error from tcsetattr: %s\n", strerror(errno));
+        //printf("Error from tcsetattr: %s\n", strerror(errno));
         return -1;
     }
     return 0;
@@ -244,18 +299,19 @@ void set_mincount(int fd, int mcount)
     struct termios tty;
 
     if (tcgetattr(fd, &tty) < 0) {
-        printf("Error tcgetattr: %s\n", strerror(errno));
+        //printf("Error tcgetattr: %s\n", strerror(errno));
         return;
     }
 
     tty.c_cc[VMIN] = mcount ? 1 : 0;
     tty.c_cc[VTIME] = 5;        /* half second timer */
 
-    if (tcsetattr(fd, TCSANOW, &tty) < 0)
-        printf("Error tcsetattr: %s\n", strerror(errno));
+    //if (tcsetattr(fd, TCSANOW, &tty) < 0)
+        //printf("Error tcsetattr: %s\n", strerror(errno));
 }
 
 void record_beats(bongo_state* state, button_press* presses, int adapter, int password_length){
+    reset_state(state);
     int beats_entered = 1;
 
     char *portname = "/dev/input/js0";
@@ -274,7 +330,7 @@ void record_beats(bongo_state* state, button_press* presses, int adapter, int pa
     /* simple output */
     wlen = write(fd, "Hello!\n", 7);
     if (wlen != 7) {
-        printf("Error from write: %d, %d\n", wlen, errno);
+        //printf("Error from write: %d, %d\n", wlen, errno);
     }
     tcdrain(fd);    /* delay for output */
 
@@ -295,8 +351,10 @@ void record_beats(bongo_state* state, button_press* presses, int adapter, int pa
                     first_beat_pressed = 1;
                 }
             }
+            draw_bongos(*state);
+            reset_state(state);
         } else if (rdlen < 0) {
-            printf("Error from read: %d: %s\n", rdlen, strerror(errno));
+            //printf("Error from read: %d: %s\n", rdlen, strerror(errno));
         }
         /* repeat read to get full message */
     } while (first_beat_pressed == 0);
@@ -322,14 +380,19 @@ void record_beats(bongo_state* state, button_press* presses, int adapter, int pa
                     presses[beats_entered] = press;
                     beats_entered++;
                 }
-            } /*else {
+            }
+
+
+            draw_bongos(*state);
+            reset_state(state);
+             /*else {
                 unsigned char   *p;
                 for (p = buf; rdlen-- > 0; p++)
                     printf("%d\t", *p);
                 printf("\n");
             }*/
         } else if (rdlen < 0) {
-            printf("Error from read: %d: %s\n", rdlen, strerror(errno));
+            //printf("Error from read: %d: %s\n", rdlen, strerror(errno));
         }
         /* repeat read to get full message */
     }
@@ -362,31 +425,58 @@ int main()
     if (bongo_decision(state, "Mayflash", "Wii U")){
         adapter = MAYFLASH;
     }
-    printf("Chose %s", adapter == MAYFLASH ? "Mayflash" : "Wii U");
+    printf("Chose %s\n", adapter == MAYFLASH ? "Mayflash" : "Wii U");
     draw_bongos(state);
 
-    int password_length = select_length(state, "-", "+");
+    int password_length;
+    password what = from_file("password.secure");
+    button_press* presses = what.presses;
+    button_press* new_presses = NULL;
+    if (presses){
+        printf("Password of length %d loaded from file\n", what.length);
+        new_presses = malloc(sizeof(button_press) * what.length);
+        password_length = what.length;
+    }
     do {
-        button_press presses[password_length];
-        button_press new_presses[password_length];
         if (bongo_decision(state, "Record", "Play")){
+            printf("SELECT PASSWORD LENGTH\n");
+            password_length = select_length(state, "-", "+");
+            reset_state(&state);
+            draw_bongos(state);
+            if (presses){
+                presses = realloc(presses, password_length * sizeof(button_press));
+                new_presses = realloc(new_presses, password_length * sizeof(button_press));
+            } else {
+                presses = malloc(password_length * sizeof(button_press));
+                new_presses = malloc(password_length * sizeof(button_press));
+            }
             printf("RECORDING PASSWORD\n");
             record_beats(&state, presses, adapter, password_length);
             printf("PASSWORD RECORDED\n");
+            to_file(presses, password_length);
         } else {
-            printf("CHECKING PASSWORD\n");
-            record_beats(&state, new_presses, adapter, password_length);
-            if (compare_beats(presses, new_presses, password_length)){
-                printf("SUCCESS!\n");
+            if (presses){
+                printf("CHECKING PASSWORD\n");
+                record_beats(&state, new_presses, adapter, password_length);
+                if (compare_beats(presses, new_presses, password_length)){
+                    printf("SUCCESS!\n");
+                    bongo_statement(state, "SUCCESS");
+                } else {
+                    printf("FAILURE!\n");
+                    bongo_statement(state, "FAILURE");
+                }
             } else {
-                printf("FAILURE!\n");
+                printf("There is no password!\n");
             }
         }
         reset_state(&state);
         draw_bongos(state);
     } while (1);
 
-
+    if (presses){
+        free(presses);
+        free(new_presses);
+    }
     /*int adapter = -1;
     while (adapter != MAYFLASH && adapter != WIIU)
     {
@@ -537,5 +627,39 @@ void generate_window(){
 	    XNextEvent(dpy, &e);
 	    if (e.type == MapNotify)
 	        break;
+    }
+}
+
+void to_file(button_press* presses, int length){
+    FILE* output = fopen("password.secure", "w");
+    if (output){
+        fprintf(output, "%d\n", length);
+        for (int i = 0; i < length; i++){
+            fprintf(output, "%d|%d|%d\n", presses[i].button, presses[i].status, presses[i].time);
+        }
+        fclose(output);
+    }
+}
+
+password from_file(char* name){
+    FILE* input = fopen(name, "r");
+    if (input){
+        password pass = {0};
+        button_press* result;
+        int length;
+        fscanf(input, "%d\n", &length);
+        result = malloc(sizeof(button_press) * length);
+
+        for (int i = 0; i < length; i++){
+            int b, s, t;
+            fscanf(input, "%d|%d|%d\n", &b, &s, &t);
+            result[i].button = b;
+            result[i].status = s;
+            result[i].time = t;
+        }
+        fclose(input);
+        pass.presses = result;
+        pass.length = length;
+        return pass;
     }
 }
